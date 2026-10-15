@@ -7,6 +7,7 @@ import java.nio.file.Path;
  * The Haven instance's pre-launch step (Prism runs it before every start):
  * {@code "$INST_JAVA" -jar haven-launcher.jar <pack.toml URL>}.
  * <ol>
+ * <li>Runs the newest launcher the pack delivered instead, when it differs from this one ({@link SelfUpdate}).</li>
  * <li>On the first launch only, offers to import the player's map, schematics and settings from an old CUS2 install
  * ({@link OldInstalls}).</li>
  * <li>Moves the instance to the pack's NeoForge without a question, from the next launch on ({@link LoaderSync}).</li>
@@ -30,6 +31,14 @@ public final class HavenLauncher {
             System.exit(2);
         }
         Path game = gameDir();
+        try {
+            Integer delegated = SelfUpdate.delegate(game, args);
+            if (delegated != null) {
+                System.exit(delegated);
+            }
+        } catch (Exception e) {
+            System.err.println("Haven: launcher self-update skipped: " + e);
+        }
         try {
             OldInstalls.firstRunImport(game);
         } catch (Throwable t) {

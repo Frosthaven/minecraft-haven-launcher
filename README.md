@@ -2,6 +2,9 @@
 
 The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.jar <pack.toml URL>`.
 
+0. It keeps itself up to date (`SelfUpdate`): the pack delivers the newest launcher to `haven/haven-launcher.jar`; when
+   it differs from this jar, it is copied to `haven/run/<hash>.jar` and that copy runs instead (same JVM options and
+   arguments), so packwiz can replace the delivered file during the update even on Windows.
 1. On the first launch only, it looks for an old Create Ultimate Selection 2 install (the CurseForge app on Windows and
    macOS, Prism on every system, including the Flatpak and the player's other Prism instances) and offers, in one
    window, to copy the player's map and waypoints (JourneyMap), Create schematics, keybinds and settings
