@@ -1,0 +1,32 @@
+# Builds and tests the Haven launcher on every push to main, then publishes a release v<VERSION>-<commit> with
+# haven-launcher.jar. The Haven pack pins one of these releases by hash (instance/haven-launcher.pw.toml, bumped with
+# `just bump-mod haven-launcher` in minecraft-haven-pack); its update host puts the jar into Haven.zip.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: extractions/setup-just@v3
+      - run: just test
+      - name: Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(cat VERSION)-${GITHUB_SHA::7}"
+          gh release create "$tag" build/haven-launcher.jar --title "$tag" --notes "Haven launcher built from $GITHUB_SHA."
