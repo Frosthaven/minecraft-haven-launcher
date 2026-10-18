@@ -12,7 +12,8 @@ The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.ja
    starts the game when pressed (exit 0); there is no countdown. Closing the window stops the launch (exit 1), as a
    failed update does. Without a screen (tests, servers) everything prints to the console and the installer's exit
    code is the launcher's. `-Dhaven.test.action=play|close` presses the button or closes the window a second after the
-   update, for checks with a screen.
+   update, for checks with a screen; a file `haven/autoplay` in the game folder does the same once and is deleted (for
+   checks that start the game through Prism).
 2. On the first launch only, it offers to import the player's files from another Minecraft install (`OldInstalls`,
    `ImportDialog`): Prism (every sibling of this instance, the known roots, the Flatpak), the CurseForge app, the
    Modrinth app and the vanilla launcher, on Windows, macOS and Linux, plus any folder through Browse…. One checkbox

@@ -47,8 +47,10 @@ import javax.swing.border.EmptyBorder;
 final class LauncherWindow implements Updater.Progress {
     static final String MAP_URL = "https://map.minecraft.thedragon.dev/";
     static final String ART = "config/fancymenu/assets/1x/bg_haven.png";
+    static final String AUTOPLAY = "haven/autoplay";
     static final boolean MAC = System.getProperty("os.name", "").toLowerCase().contains("mac");
 
+    private final Path game;
     private final JFrame frame;
     private final JLabel status, detail, release;
     private final JProgressBar bar;
@@ -64,6 +66,7 @@ final class LauncherWindow implements Updater.Progress {
     }
 
     private LauncherWindow(Path game) {
+        this.game = game;
         FlatLaf.setGlobalExtraDefaults(Map.of("@accentColor", "#D9A441"));
         if (MAC) {
             FlatMacDarkLaf.setup();
@@ -255,14 +258,28 @@ final class LauncherWindow implements Updater.Progress {
         frame.dispose();
     }
 
-    /** -Dhaven.test.action=play|close: presses Play now, or closes the window, a second after the update is done. */
+    /**
+     * Scripted launches: {@code -Dhaven.test.action=play|close} presses Play now or closes the window a second after
+     * the update is done; a file {@value #AUTOPLAY} in the game folder presses Play once and is deleted (for tests
+     * that start the game through Prism, where no JVM option reaches this process).
+     */
     private void testHook() {
         String action = System.getProperty("haven.test.action");
         if (action == null) {
+            try {
+                if (Files.deleteIfExists(game.resolve(AUTOPLAY))) {
+                    action = "play";
+                }
+            } catch (Exception e) {
+                System.err.println("Haven: " + AUTOPLAY + ": " + e);
+            }
+        }
+        if (action == null) {
             return;
         }
+        String chosen = action;
         Timer t = new Timer(1000, e -> {
-            if (action.equals("play")) {
+            if (chosen.equals("play")) {
                 play.doClick();
             } else {
                 frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
