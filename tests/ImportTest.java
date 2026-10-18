@@ -63,8 +63,8 @@ public class ImportTest {
         check(Files.exists(game.resolve("servers.dat")), "server list copied (it lists Haven)");
         check(!Files.exists(game.resolve("mods/create.jar")), "mods not copied");
         check(Files.exists(old.resolve("options.txt")) && Files.exists(old.resolve("journeymap")), "old install untouched");
-        check(Files.readString(game.resolve("bootstrap-args.txt")).equals("https://example.invalid/key/current/pack.toml"),
-                "updater started with the pack URL");
+        check(Files.readString(game.resolve("bootstrap-args.txt")).equals("-g https://example.invalid/key/current/pack.toml"),
+                "updater started without its window, with the pack URL");
         check(Files.readString(game.resolve("haven-import.done")).startsWith("imported"), "marked done");
 
         Files.writeString(game.resolve("options.txt"), "changed in game");

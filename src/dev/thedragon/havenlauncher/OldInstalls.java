@@ -1,6 +1,5 @@
 package dev.thedragon.havenlauncher;
 
-import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
@@ -11,93 +10,91 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.UIManager;
-import java.awt.BorderLayout;
 
 /**
- * First-launch import of a player's personal files from an old Create Ultimate Selection 2 install: the CurseForge
- * app (Windows, macOS) or Prism (all systems, including the Flatpak and any sibling of this instance). Copies only;
- * the old install is never changed. Asks once: after Import, "Don't ask again", or when nothing is found, a marker file
- * ({@value #DONE}) in the new game folder stops it for good; "Not now" asks again next launch.
- * Test hook: {@code -Dhaven.import.auto=first} imports the best match without a window.
+ * The player's other Minecraft installs on this computer and what can be copied from them into Haven: the CurseForge
+ * app, Prism (every sibling of this instance, the known roots, the Flatpak), the Modrinth app and the vanilla
+ * launcher, on Windows, macOS and Linux. Copies only; the old install is never changed. A folder adds the files Haven
+ * does not have yet; a single file (options.txt, servers.dat) is replaced. servers.dat is offered only when it lists
+ * Haven; options.txt from another pack loses its resource pack lines, which Haven sets itself.
+ * <p>
+ * First launch: {@link HavenLauncher} asks once. After Import, "Don't ask again", or when nothing is found, a marker
+ * file ({@value #DONE}) in the game folder stops it for good; "Not now" asks again next launch. Test hook:
+ * {@code -Dhaven.import.auto=first} imports the best match's default items without a window.
  */
 final class OldInstalls {
     static final String DONE = "haven-import.done";
-    /** What is copied, relative to the game folder. servers.dat only when it already lists Haven. */
-    static final List<String> ITEMS = List.of("journeymap", "schematics", "options.txt", "config/jei/world",
-            "screenshots", "saves", "servers.dat");
     static final String HAVEN_HOST = "thedragon.dev";
 
-    record Install(String label, Path game, boolean cus2, long modified) {
+    enum Kind { SAME_PACK, OTHER_PACK, VANILLA }
+
+    /** One thing to copy. {@code universal}: carries over from any pack; else tied to a pack's worlds and item list. */
+    record Item(String id, String label, String path, boolean universal) {
+    }
+
+    static final List<Item> ITEMS = List.of(
+            new Item("options", "Controls and settings", "options.txt", true),
+            new Item("servers", "Server list", "servers.dat", true),
+            new Item("screenshots", "Screenshots", "screenshots", true),
+            new Item("schematics", "Create schematics", "schematics", true),
+            new Item("blueprints", "Axiom blueprints", "blueprints", true),
+            new Item("journeymap", "JourneyMap map and waypoints", "journeymap", false),
+            new Item("ftbchunks", "FTB Chunks map and claims", "local/ftbchunks", false),
+            new Item("jei", "JEI bookmarks and history", "config/jei/world", false),
+            new Item("saves", "Single-player worlds", "saves", false));
+
+    record Install(String launcher, String name, Path game, Kind kind, long modified) {
         @Override
         public String toString() {
-            return label;
+            return launcher + " · " + name;
         }
+    }
+
+    /** What one install has for one item: the text next to the checkbox, and whether there is anything to copy. */
+    record Presence(String detail, boolean present) {
     }
 
     private OldInstalls() {
     }
 
-    static void firstRunImport(Path game) throws IOException {
-        Path done = game.resolve(DONE);
-        if (Files.exists(done)) {
-            return;
-        }
-        List<Install> found = find(game);
-        if (found.isEmpty()) {
-            Files.writeString(done, "no old install found\n");
-            System.out.println("Haven: no old install to import from");
-            return;
-        }
-        Install pick;
-        if ("first".equals(System.getProperty("haven.import.auto"))) {
-            pick = found.get(0);
-        } else if (GraphicsEnvironment.isHeadless()) {
-            System.out.println("Haven: no screen to ask on; import skipped for now");
-            return;
-        } else {
-            pick = ask(found);
-            if (pick == null) {
-                return;
-            }
-            if (pick.game() == null) {          // "Don't ask again"
-                Files.writeString(done, "declined\n");
-                return;
-            }
-        }
-        int files = copy(pick.game(), game);
-        Files.writeString(done, "imported " + files + " files from " + pick.game() + "\n");
-        System.out.println("Haven: imported " + files + " files from " + pick.game());
-    }
-
-    /** Old installs that hold something worth importing, the CUS2 ones first, then the most recently used. */
+    /** Installs with something to copy: the same pack first, then the most recently used. */
     static List<Install> find(Path self) {
         String home = System.getProperty("user.home");
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
-        List<Path> curseforge = new ArrayList<>();
-        List<Path> prism = new ArrayList<>();
+        List<Path> curseforge = new ArrayList<>(), prism = new ArrayList<>(), modrinth = new ArrayList<>(), vanilla = new ArrayList<>();
         if (os.contains("win")) {
             curseforge.add(Path.of(home, "curseforge", "minecraft", "Instances"));
             String appdata = System.getenv("APPDATA");
             if (appdata != null) {
                 prism.add(Path.of(appdata, "PrismLauncher", "instances"));
+                modrinth.add(Path.of(appdata, "ModrinthApp", "profiles"));
+                modrinth.add(Path.of(appdata, "com.modrinth.theseus", "profiles"));
+                vanilla.add(Path.of(appdata, ".minecraft"));
             }
         } else if (os.contains("mac")) {
+            Path support = Path.of(home, "Library", "Application Support");
             curseforge.add(Path.of(home, "Documents", "curseforge", "minecraft", "Instances"));
-            prism.add(Path.of(home, "Library", "Application Support", "PrismLauncher", "instances"));
+            prism.add(support.resolve("PrismLauncher").resolve("instances"));
+            modrinth.add(support.resolve("ModrinthApp").resolve("profiles"));
+            modrinth.add(support.resolve("com.modrinth.theseus").resolve("profiles"));
+            vanilla.add(support.resolve("minecraft"));
         } else {
             String xdg = System.getenv("XDG_DATA_HOME");
-            prism.add((xdg != null && !xdg.isBlank() ? Path.of(xdg) : Path.of(home, ".local", "share"))
-                    .resolve("PrismLauncher").resolve("instances"));
-            prism.add(Path.of(home, ".var", "app", "org.prismlauncher.PrismLauncher", "data", "PrismLauncher",
-                    "instances"));
+            Path data = xdg != null && !xdg.isBlank() ? Path.of(xdg) : Path.of(home, ".local", "share");
+            prism.add(data.resolve("PrismLauncher").resolve("instances"));
+            prism.add(Path.of(home, ".var", "app", "org.prismlauncher.PrismLauncher", "data", "PrismLauncher", "instances"));
+            modrinth.add(data.resolve("ModrinthApp").resolve("profiles"));
+            modrinth.add(data.resolve("com.modrinth.theseus").resolve("profiles"));
+            modrinth.add(Path.of(home, ".var", "app", "com.modrinth.ModrinthApp", "data", "ModrinthApp", "profiles"));
+            vanilla.add(Path.of(home, ".minecraft"));
+            vanilla.add(Path.of(home, ".var", "app", "com.mojang.Minecraft", ".minecraft"));
         }
         String instDir = System.getenv("INST_DIR");   // this instance: its siblings are the player's other instances
         if (instDir != null && !instDir.isBlank()) {
@@ -106,38 +103,202 @@ final class OldInstalls {
         List<Install> found = new ArrayList<>();
         for (Path root : curseforge) {
             for (Path inst : children(root)) {
-                add(found, "CurseForge: " + inst.getFileName(), inst, self);
+                add(found, describe("CurseForge app", inst.getFileName().toString(), inst, self));
             }
         }
         for (Path root : prism) {
             for (Path inst : children(root)) {
                 for (String sub : List.of("minecraft", ".minecraft")) {
-                    add(found, "Prism: " + inst.getFileName(), inst.resolve(sub), self);
+                    add(found, describe("Prism Launcher", prismName(inst), inst.resolve(sub), self));
                 }
             }
         }
-        found.sort(Comparator.comparing((Install i) -> !i.cus2()).thenComparing(i -> -i.modified()));
+        for (Path root : modrinth) {
+            for (Path profile : children(root)) {
+                add(found, describe("Modrinth app", profile.getFileName().toString(), profile, self));
+            }
+        }
+        for (Path dir : vanilla) {
+            add(found, describe("Minecraft Launcher", ".minecraft", dir, self));
+        }
+        found.sort(Comparator.comparing((Install i) -> i.kind() != Kind.SAME_PACK).thenComparing(i -> -i.modified()));
         return found;
     }
 
-    private static void add(List<Install> found, String label, Path game, Path self) {
+    private static void add(List<Install> found, Install i) {
+        if (i != null && found.stream().noneMatch(f -> f.game().equals(i.game()))) {
+            found.add(i);
+        }
+    }
+
+    /** An install for a game folder, or null when it is not one, is this instance, or holds nothing to copy. */
+    static Install describe(String launcher, String name, Path game, Path self) {
         Path g = game.toAbsolutePath().normalize();
-        if (!Files.isDirectory(g) || g.equals(self.toAbsolutePath().normalize())
-                || found.stream().anyMatch(i -> i.game().equals(g))) {
-            return;
+        if (!Files.isDirectory(g) || g.equals(self.toAbsolutePath().normalize())) {
+            return null;
         }
-        if (!Files.isDirectory(g.resolve("journeymap")) && !Files.isDirectory(g.resolve("schematics"))) {
-            return;   // nothing a player would miss
+        String lower = name.toLowerCase(Locale.ROOT);
+        Kind kind = lower.contains("ultimate selection") || lower.contains("cus2") || lower.contains("haven") ? Kind.SAME_PACK
+                : hasJars(g.resolve("mods")) ? Kind.OTHER_PACK : Kind.VANILLA;
+        Install i = new Install(launcher, name, g, kind, modified(g));
+        return presence(i).values().stream().anyMatch(Presence::present) ? i : null;
+    }
+
+    /** Per item id: what this install has. */
+    static Map<String, Presence> presence(Install i) {
+        Map<String, Presence> map = new LinkedHashMap<>();
+        for (Item item : ITEMS) {
+            Path p = i.game().resolve(item.path());
+            if (!Files.exists(p)) {
+                map.put(item.id(), new Presence("not found", false));
+            } else if (item.id().equals("servers")) {
+                boolean haven = listsHaven(p);
+                map.put(item.id(), new Presence(haven ? "servers.dat · lists Haven" : "servers.dat · no Haven entry", haven));
+            } else if (Files.isRegularFile(p)) {
+                map.put(item.id(), new Presence(item.path(), true));
+            } else {
+                long[] stat = stat(p);
+                String what = item.id().equals("saves") ? plural(countDirs(p), "world") : plural(stat[0], "file");
+                map.put(item.id(), new Presence(item.path() + "/ · " + (stat[0] == 0 ? "empty" : what + ", " + human(stat[1])),
+                        stat[0] > 0));
+            }
         }
-        String name = label.toLowerCase(Locale.ROOT);
-        boolean cus2 = name.contains("ultimate selection") || name.contains("cus2") || name.contains("haven");
-        long modified = 0;
+        return map;
+    }
+
+    /** What is ticked by default: what is there, never worlds, and from another pack only the items any pack can use. */
+    static Set<String> defaults(Install i, Map<String, Presence> presence) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (Item item : ITEMS) {
+            if (presence.get(item.id()).present() && !item.id().equals("saves") && (item.universal() || i.kind() == Kind.SAME_PACK)) {
+                ids.add(item.id());
+            }
+        }
+        return ids;
+    }
+
+    static String compat(Kind k) {
+        return switch (k) {
+            case SAME_PACK -> "Same modpack. Everything carries over as is.";
+            case OTHER_PACK -> "Different modpack. Controls, servers, screenshots and schematics carry over cleanly. "
+                    + "Map data, chunk claims and JEI bookmarks belong to that pack's worlds and item list, so they are off by default.";
+            case VANILLA -> "Vanilla install. Controls, servers and screenshots carry over. Its worlds open in Haven, but they would gain mod content.";
+        };
+    }
+
+    /** Copies the chosen items into the game folder; returns the number of files copied. */
+    static int copy(Install from, Path to, Set<String> ids) throws IOException {
+        int[] count = {0};
+        for (Item item : ITEMS) {
+            Path src = from.game().resolve(item.path());
+            if (!ids.contains(item.id()) || !Files.exists(src)) {
+                continue;
+            }
+            Path dst = to.resolve(item.path());
+            if (Files.isDirectory(src)) {
+                Files.walkFileTree(src, new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) throws IOException {
+                        Files.createDirectories(dst.resolve(src.relativize(dir).toString()));
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes a) throws IOException {
+                        Path target = dst.resolve(src.relativize(file).toString());
+                        if (!Files.exists(target)) {   // Haven's own newer files stay
+                            Files.copy(file, target, StandardCopyOption.COPY_ATTRIBUTES);
+                            count[0]++;
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+            } else if (item.id().equals("servers") && !listsHaven(src)) {
+                continue;   // keep Haven's list
+            } else if (item.id().equals("options") && from.kind() != Kind.SAME_PACK) {
+                Files.createDirectories(dst.getParent());
+                List<String> kept = Files.readAllLines(src, StandardCharsets.UTF_8).stream()
+                        .filter(l -> !l.startsWith("resourcePacks:") && !l.startsWith("incompatibleResourcePacks:")).toList();
+                Files.write(dst, kept, StandardCharsets.UTF_8);
+                count[0]++;
+            } else {
+                Files.createDirectories(dst.getParent());
+                Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                count[0]++;
+            }
+        }
+        return count[0];
+    }
+
+    private static boolean listsHaven(Path serversDat) {
         try {
-            modified = Files.getLastModifiedTime(g.resolve("journeymap")).toMillis();
-        } catch (IOException ignored) {
-            // no journeymap folder: sorts last among equals
+            return new String(Files.readAllBytes(serversDat), StandardCharsets.ISO_8859_1).contains(HAVEN_HOST);
+        } catch (IOException e) {
+            return false;
         }
-        found.add(new Install(label, g, cus2, modified));
+    }
+
+    private static boolean hasJars(Path mods) {
+        if (!Files.isDirectory(mods)) {
+            return false;
+        }
+        try (Stream<Path> s = Files.list(mods)) {
+            return s.anyMatch(p -> p.toString().endsWith(".jar"));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Prism's display name from instance.cfg, else the folder name. */
+    private static String prismName(Path inst) {
+        try {
+            for (String line : Files.readAllLines(inst.resolve("instance.cfg"), StandardCharsets.UTF_8)) {
+                if (line.startsWith("name=") && line.length() > 5) {
+                    return line.substring(5).strip();
+                }
+            }
+        } catch (IOException ignored) {
+            // no instance.cfg: an older or hand-made instance
+        }
+        return inst.getFileName().toString();
+    }
+
+    private static long modified(Path game) {
+        long newest = 0;
+        for (String p : List.of("options.txt", "journeymap", "saves")) {
+            try {
+                newest = Math.max(newest, Files.getLastModifiedTime(game.resolve(p)).toMillis());
+            } catch (IOException ignored) {
+                // not there
+            }
+        }
+        return newest;
+    }
+
+    /** {files, bytes} under a folder. */
+    private static long[] stat(Path dir) {
+        long[] s = {0, 0};
+        try (Stream<Path> w = Files.walk(dir)) {
+            w.filter(Files::isRegularFile).forEach(f -> {
+                s[0]++;
+                try {
+                    s[1] += Files.size(f);
+                } catch (IOException ignored) {
+                    // counted, size unknown
+                }
+            });
+        } catch (IOException ignored) {
+            // unreadable folder: shown as empty
+        }
+        return s;
+    }
+
+    private static long countDirs(Path dir) {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.filter(Files::isDirectory).count();
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     private static List<Path> children(Path dir) {
@@ -151,64 +312,20 @@ final class OldInstalls {
         }
     }
 
-    /** The import window. Returns the chosen install, an install with a null game for "Don't ask again", or null. */
-    private static Install ask(List<Install> found) {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {
-            // the default look works too
-        }
-        JComboBox<Install> box = new JComboBox<>(found.toArray(Install[]::new));
-        JPanel panel = new JPanel(new BorderLayout(0, 8));
-        panel.add(new JLabel("<html><b>Bring your stuff into Haven?</b><br><br>"
-                + "Copies your map and waypoints (JourneyMap), Create schematics, keybinds and settings,<br>"
-                + "JEI bookmarks, screenshots and single-player worlds from your old install.<br>"
-                + "Your old install is not changed.<br><br>Import from:</html>"), BorderLayout.NORTH);
-        panel.add(box, BorderLayout.CENTER);
-        String[] options = {"Import", "Not now", "Don't ask again"};
-        int choice = JOptionPane.showOptionDialog(null, panel, "Haven", JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
-        if (choice == 0) {
-            return (Install) box.getSelectedItem();
-        }
-        return choice == 2 ? new Install("", null, false, 0) : null;
+    private static String plural(long n, String word) {
+        return n + " " + word + (n == 1 ? "" : "s");
     }
 
-    /** Copies ITEMS from the old game folder into the new one (replacing); returns the number of files copied. */
-    static int copy(Path from, Path to) throws IOException {
-        int[] count = {0};
-        for (String item : ITEMS) {
-            Path src = from.resolve(item);
-            if (!Files.exists(src)) {
-                continue;
-            }
-            if (item.equals("servers.dat") && !new String(Files.readAllBytes(src), StandardCharsets.ISO_8859_1)
-                    .contains(HAVEN_HOST)) {
-                continue;   // keep the new list (it has Haven) unless the old one already did
-            }
-            Path dst = to.resolve(item);
-            if (Files.isDirectory(src)) {
-                Files.walkFileTree(src, new SimpleFileVisitor<>() {
-                    @Override
-                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) throws IOException {
-                        Files.createDirectories(dst.resolve(src.relativize(dir).toString()));
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    @Override
-                    public FileVisitResult visitFile(Path file, BasicFileAttributes a) throws IOException {
-                        Files.copy(file, dst.resolve(src.relativize(file).toString()),
-                                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                        count[0]++;
-                        return FileVisitResult.CONTINUE;
-                    }
-                });
-            } else {
-                Files.createDirectories(dst.getParent());
-                Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                count[0]++;
-            }
+    static String human(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
         }
-        return count[0];
+        if (bytes < 1024 * 1024) {
+            return (bytes + 512) / 1024 + " KB";
+        }
+        if (bytes < 1024L * 1024 * 1024) {
+            return (bytes + 512 * 1024) / (1024 * 1024) + " MB";
+        }
+        return String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 }
