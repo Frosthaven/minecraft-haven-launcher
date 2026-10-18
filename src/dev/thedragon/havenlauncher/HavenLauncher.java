@@ -24,7 +24,7 @@ import java.util.concurrent.Executors;
  * ({@link Updater}); puts optional files the installer met for the first time back to the pack default, asks on
  * the first launch, and runs it again when that changed anything ({@link OptionalMods}).</li>
  * <li>After a good update, adds or removes the offline editor's bridge mods ({@link OfflineEditor}).</li>
- * <li>Exits 0 on Play now or when the countdown ends; closing the window or a failed update exits 1 and stops the
+ * <li>Exits 0 on Play now (off while an update runs); closing the window or a failed update exits 1 and stops the
  * launch, as before. Without a window the installer's exit code is ours.</li>
  * </ol>
  * The import, the NeoForge step and the editor step can never block the update: any error there is printed and skipped.

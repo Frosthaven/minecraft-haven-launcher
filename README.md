@@ -8,9 +8,11 @@ The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.ja
 1. It opens the launcher window (`LauncherWindow`, Swing with FlatLaf): the pack's title art
    (`config/fancymenu/assets/1x/bg_haven.png`, delivered by the pack; a plain band before the first update), the
    update card (headline, progress, current file, release) and the footer: **Online Map** (the server's map, behind
-   the Haven login), **Import settings**, **Optional mods…**, **Play now (10)**. The game starts when the countdown
-   ends or on Play now (exit 0). Closing the window stops the launch (exit 1), as a failed update does. Without a
-   screen (tests, servers) everything prints to the console and the installer's exit code is the launcher's.
+   the Haven login), **Import settings**, **Optional mods…**, **Play now**. Play now is off while the update runs and
+   starts the game when pressed (exit 0); there is no countdown. Closing the window stops the launch (exit 1), as a
+   failed update does. Without a screen (tests, servers) everything prints to the console and the installer's exit
+   code is the launcher's. `-Dhaven.test.action=play|close` presses the button or closes the window a second after the
+   update, for checks with a screen.
 2. On the first launch only, it offers to import the player's files from another Minecraft install (`OldInstalls`,
    `ImportDialog`): Prism (every sibling of this instance, the known roots, the Flatpak), the CurseForge app, the
    Modrinth app and the vanilla launcher, on Windows, macOS and Linux, plus any folder through Browse…. One checkbox

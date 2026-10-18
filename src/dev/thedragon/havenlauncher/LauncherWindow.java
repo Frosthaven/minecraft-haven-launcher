@@ -39,13 +39,14 @@ import javax.swing.border.EmptyBorder;
 /**
  * The launcher's window: the pack's title art ({@value #ART}, delivered by the pack; a plain band before the first
  * update), the update card (headline, progress, current file, release) and the footer (Online Map, Import settings,
- * Optional mods…, Play now with the auto-start countdown). Methods may be called from any thread. {@link #await()}
- * blocks until the player starts the game (0), the countdown ends (0) or the window is closed (1).
+ * Optional mods…, Play now). Play now is off while an update runs and is the only way to start: no countdown, the
+ * player takes their time. Methods may be called from any thread. {@link #await()} blocks until the player starts the
+ * game (0) or closes the window (1). Test hook: {@code -Dhaven.test.action=play|close} does that a second after the
+ * update is done.
  */
 final class LauncherWindow implements Updater.Progress {
     static final String MAP_URL = "https://map.minecraft.thedragon.dev/";
     static final String ART = "config/fancymenu/assets/1x/bg_haven.png";
-    static final int COUNTDOWN_SECONDS = 10;
     static final boolean MAC = System.getProperty("os.name", "").toLowerCase().contains("mac");
 
     private final JFrame frame;
@@ -55,8 +56,6 @@ final class LauncherWindow implements Updater.Progress {
     private final CountDownLatch decided = new CountDownLatch(1);
     private volatile int exitCode = 1;
     private Runnable onImport = () -> { }, onOptional = () -> { };
-    private Timer countdown;
-    private int secondsLeft, paused;
 
     static LauncherWindow open(Path game) throws Exception {
         LauncherWindow[] w = new LauncherWindow[1];
@@ -144,7 +143,6 @@ final class LauncherWindow implements Updater.Progress {
     /** An update (or another pass) starts: progress unknown, Play off. */
     void busy(String headline) {
         onEdt(() -> {
-            stopCountdown();
             status.setText(headline);
             detail.setText(" ");
             bar.setIndeterminate(true);
@@ -174,7 +172,7 @@ final class LauncherWindow implements Updater.Progress {
         onEdt(() -> release.setText(text.isBlank() ? " " : text));
     }
 
-    /** The update is done: the game starts after the countdown, or on Play now. */
+    /** The update is done: the game starts on Play now. */
     void ready(String headline, String text) {
         onEdt(() -> {
             status.setText(headline);
@@ -183,16 +181,16 @@ final class LauncherWindow implements Updater.Progress {
             bar.setValue(bar.getMaximum());
             optional.setEnabled(true);
             retryBtn.setVisible(false);
+            play.setText("Play now");
             play.setEnabled(true);
             play.requestFocusInWindow();
-            startCountdown();
+            testHook();
         });
     }
 
     /** The update did not finish: show why, offer another try and "Play anyway". */
     void failed(String headline, String why, Runnable retry) {
         onEdt(() -> {
-            stopCountdown();
             status.setText(headline);
             detail.setText(why);
             bar.setIndeterminate(false);
@@ -215,22 +213,17 @@ final class LauncherWindow implements Updater.Progress {
         onEdt(() -> detail.setText(text));
     }
 
-    /** Runs a dialog on the event thread while the countdown waits; returns its result. */
+    /** Runs a dialog on the event thread and returns its result. */
     <T> T dialog(Callable<T> body) throws Exception {
         Object[] result = new Object[1];
         Exception[] error = new Exception[1];
-        onEdt(() -> paused++);
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try {
-                    result[0] = body.call();
-                } catch (Exception e) {
-                    error[0] = e;
-                }
-            });
-        } finally {
-            onEdt(() -> paused--);
-        }
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                result[0] = body.call();
+            } catch (Exception e) {
+                error[0] = e;
+            }
+        });
         if (error[0] != null) {
             throw error[0];
         }
@@ -252,36 +245,31 @@ final class LauncherWindow implements Updater.Progress {
     // ---- inside ----------------------------------------------------------------------------------
 
     private void decide(int code) {
+        if (decided.getCount() == 0) {
+            return;
+        }
         exitCode = code;
-        stopCountdown();
+        System.out.println(code == 0 ? "Haven: starting the game" : "Haven: launch stopped from the window");
         decided.countDown();
         frame.setVisible(false);
         frame.dispose();
     }
 
-    private void startCountdown() {
-        stopCountdown();
-        secondsLeft = COUNTDOWN_SECONDS;
-        play.setText("Play now (" + secondsLeft + ")");
-        countdown = new Timer(1000, e -> {
-            if (paused > 0) {
-                return;
-            }
-            secondsLeft--;
-            if (secondsLeft <= 0) {
-                decide(0);
+    /** -Dhaven.test.action=play|close: presses Play now, or closes the window, a second after the update is done. */
+    private void testHook() {
+        String action = System.getProperty("haven.test.action");
+        if (action == null) {
+            return;
+        }
+        Timer t = new Timer(1000, e -> {
+            if (action.equals("play")) {
+                play.doClick();
             } else {
-                play.setText("Play now (" + secondsLeft + ")");
+                frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
             }
         });
-        countdown.start();
-    }
-
-    private void stopCountdown() {
-        if (countdown != null) {
-            countdown.stop();
-            countdown = null;
-        }
+        t.setRepeats(false);
+        t.start();
     }
 
     private static void onEdt(Runnable r) {
