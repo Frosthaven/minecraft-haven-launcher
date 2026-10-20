@@ -34,11 +34,14 @@ import javax.swing.border.EmptyBorder;
  * <p>
  * {@value #OS_LIST} in the pack limits optional files to one system, one line each ({@code macos mods/x.pw.toml};
  * systems {@code macos}, {@code windows}, {@code linux}): on any other system the file is held off after every update
- * (so the installer removes it) and left out of the dialog.
+ * (so the installer removes it) and left out of the dialog. On its own system it is turned on once ({@value #OS_RECORD}
+ * in the game folder lists those), and the player's later choice stands. Its pack default is off, so a launcher before
+ * 2.1.1 (the first session after the update still runs the old one) keeps it off everywhere.
  */
 final class OptionalMods {
     static final String MANIFEST = "packwiz.json";
     static final String OS_LIST = "config/haven-os-mods.txt";
+    static final String OS_RECORD = "haven-os-mods.applied";
     private static final Pattern KEY = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)+\\.pw\\.toml)\"\\s*:\\s*\\{");
     private static final Pattern OPTIONAL = Pattern.compile("\"isOptional\"\\s*:\\s*true");
     private static final Pattern VALUE = Pattern.compile("\"optionValue\"\\s*:\\s*(true|false)");
@@ -129,15 +132,26 @@ final class OptionalMods {
     static Set<String> applyDefaults(Path game, String baseUrl, Set<String> before) throws IOException {
         Map<String, Boolean> now = read(game);
         Map<String, Boolean> wanted = new LinkedHashMap<>();
-        Set<String> otherOs = otherOs(game);
+        Set<String> otherOs = otherOs(game), thisOs = thisOs(game);
+        Path record = game.resolve(OS_RECORD);
+        Set<String> applied = new LinkedHashSet<>(Files.exists(record)
+                ? Files.readAllLines(record, StandardCharsets.UTF_8).stream().map(String::strip).toList() : List.of());
+        boolean recorded = false;
         for (String path : now.keySet()) {
             if (otherOs.contains(path)) {
                 wanted.put(path, false);
+            } else if (thisOs.contains(path) && !applied.contains(path)) {
+                wanted.put(path, true);   // once: then the player's choice stands
+                recorded = applied.add(path);
             } else if (!before.contains(path)) {
                 wanted.put(path, meta(baseUrl, path).defaultOn());
             }
         }
-        return wanted.isEmpty() ? Set.of() : write(game, wanted);
+        Set<String> changed = wanted.isEmpty() ? Set.of() : write(game, wanted);
+        if (recorded) {
+            Files.writeString(record, String.join("\n", applied) + "\n", StandardCharsets.UTF_8);
+        }
+        return changed;
     }
 
     /** The pack's name, description and default for one optional file; a name made from the path when offline. */
@@ -168,13 +182,22 @@ final class OptionalMods {
 
     /** The optional files {@value #OS_LIST} gives to another system than this one. */
     static Set<String> otherOs(Path game) throws IOException {
+        return osListed(game, false);
+    }
+
+    /** The optional files {@value #OS_LIST} gives to this system. */
+    static Set<String> thisOs(Path game) throws IOException {
+        return osListed(game, true);
+    }
+
+    private static Set<String> osListed(Path game, boolean mine) throws IOException {
         Set<String> out = new LinkedHashSet<>();
         Path list = game.resolve(OS_LIST);
         if (Files.exists(list)) {
             String os = os();
             for (String line : Files.readAllLines(list, StandardCharsets.UTF_8)) {
                 String[] f = line.strip().split("\\s+");
-                if (f.length == 2 && !f[0].startsWith("#") && !f[0].equals(os)) {
+                if (f.length == 2 && !f[0].startsWith("#") && f[0].equals(os) == mine) {
                     out.add(f[1]);
                 }
             }

@@ -6,8 +6,8 @@ import java.nio.file.Path;
  * stand-in bootstrap that behaves like packwiz-installer without its window: on the first run it writes packwiz.json
  * with every optional file turned on. The launcher must put the file whose pack default is off back to off, run the
  * installer again for that, remember the release, keep the rest of the manifest, and pass the installer's exit code
- * through. A third optional file is listed for macOS only in config/haven-os-mods.txt: held off elsewhere, on by its
- * default on a Mac. Run: java tests/OptionsTest.java <launcher jar>
+ * through. A third optional file (pack default off) is listed for macOS only in config/haven-os-mods.txt: held off
+ * elsewhere; on a Mac turned on once, then the player's choice stands. Run: java tests/OptionsTest.java <launcher jar>
  */
 public class OptionsTest {
     static void check(boolean ok, String what) {
@@ -65,7 +65,7 @@ public class OptionsTest {
         Files.writeString(pack.resolve("mods/off.pw.toml"), "name = \"Off Mod\"\nfilename = \"off.jar\"\n\n[option]\noptional = true\n"
                 + "default = false\ndescription = \"Off unless asked for.\"\n");
         Files.writeString(pack.resolve("mods/mac.pw.toml"), "name = \"Mac Mod\"\nfilename = \"mac.jar\"\n\n[option]\noptional = true\n"
-                + "default = true\ndescription = \"Macs only.\"\n");
+                + "default = false\ndescription = \"Macs only.\"\n");
         // Stand-in bootstrap: prints like the CLI, writes a first manifest with every optional file on, honours HAVEN_TEST_EXIT.
         String manifest = "{\n  \"packFileHash\": {\"type\": \"sha256\", \"value\": \"p\"},\n  \"cachedFiles\": {\n"
                 + "    \"mods/req.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"r\"}, \"isOptional\": false, \"optionValue\": true, \"cachedLocation\": \"mods/req.jar\"},\n"
@@ -110,7 +110,14 @@ public class OptionsTest {
         Files.copy(game.resolve("packwiz-installer-bootstrap.jar"), mac.resolve("packwiz-installer-bootstrap.jar"));
         check(run(jar, home, mac, pack, null, "macos") == 0, "first launch on a Mac exits 0");
         check(entry(Files.readString(mac.resolve("packwiz.json")), "mods/mac.pw.toml").contains("\"optionValue\": true"),
-                "a macOS-only optional keeps its default on a Mac");
+                "a macOS-only optional is turned on on a Mac");
+        Path m = mac.resolve("packwiz.json");
+        String turnedOff = Files.readString(m).replace(entry(Files.readString(m), "mods/mac.pw.toml"),
+                entry(Files.readString(m), "mods/mac.pw.toml").replace("\"optionValue\": true", "\"optionValue\": false"));
+        Files.writeString(m, turnedOff);
+        check(run(jar, home, mac, pack, null, "macos") == 0
+                && entry(Files.readString(m), "mods/mac.pw.toml").contains("\"optionValue\": false"),
+                "a Mac player who turned it off keeps it off");
         System.out.println("options test passed");
         for (Path p : Files.walk(home).sorted(java.util.Comparator.reverseOrder()).toList()) {
             Files.delete(p);
