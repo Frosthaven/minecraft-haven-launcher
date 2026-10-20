@@ -31,9 +31,14 @@ import javax.swing.border.EmptyBorder;
  * (its CLI handler "accepts" them), so after each run {@link #applyDefaults} puts the files that were new in that run
  * back to the pack's {@code [option] default}, read from their .pw.toml on the update host. Names and descriptions for
  * the dialog come from the same files. Edits keep the rest of the manifest byte for byte.
+ * <p>
+ * {@value #OS_LIST} in the pack limits optional files to one system, one line each ({@code macos mods/x.pw.toml};
+ * systems {@code macos}, {@code windows}, {@code linux}): on any other system the file is held off after every update
+ * (so the installer removes it) and left out of the dialog.
  */
 final class OptionalMods {
     static final String MANIFEST = "packwiz.json";
+    static final String OS_LIST = "config/haven-os-mods.txt";
     private static final Pattern KEY = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)+\\.pw\\.toml)\"\\s*:\\s*\\{");
     private static final Pattern OPTIONAL = Pattern.compile("\"isOptional\"\\s*:\\s*true");
     private static final Pattern VALUE = Pattern.compile("\"optionValue\"\\s*:\\s*(true|false)");
@@ -124,8 +129,11 @@ final class OptionalMods {
     static Set<String> applyDefaults(Path game, String baseUrl, Set<String> before) throws IOException {
         Map<String, Boolean> now = read(game);
         Map<String, Boolean> wanted = new LinkedHashMap<>();
+        Set<String> otherOs = otherOs(game);
         for (String path : now.keySet()) {
-            if (!before.contains(path)) {
+            if (otherOs.contains(path)) {
+                wanted.put(path, false);
+            } else if (!before.contains(path)) {
                 wanted.put(path, meta(baseUrl, path).defaultOn());
             }
         }
@@ -148,10 +156,36 @@ final class OptionalMods {
 
     static List<Entry> entries(Path game, String baseUrl) throws IOException {
         List<Entry> list = new ArrayList<>();
+        Set<String> otherOs = otherOs(game);
         for (Map.Entry<String, Boolean> e : read(game).entrySet()) {
+            if (otherOs.contains(e.getKey())) {
+                continue;
+            }
             list.add(new Entry(e.getKey(), meta(baseUrl, e.getKey()), e.getValue()));
         }
         return list;
+    }
+
+    /** The optional files {@value #OS_LIST} gives to another system than this one. */
+    static Set<String> otherOs(Path game) throws IOException {
+        Set<String> out = new LinkedHashSet<>();
+        Path list = game.resolve(OS_LIST);
+        if (Files.exists(list)) {
+            String os = os();
+            for (String line : Files.readAllLines(list, StandardCharsets.UTF_8)) {
+                String[] f = line.strip().split("\\s+");
+                if (f.length == 2 && !f[0].startsWith("#") && !f[0].equals(os)) {
+                    out.add(f[1]);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** {@code macos}, {@code windows} or {@code linux} ({@code -Dhaven.test.os} for tests). */
+    static String os() {
+        String name = System.getProperty("haven.test.os", System.getProperty("os.name", "")).toLowerCase(java.util.Locale.ROOT);
+        return name.contains("mac") ? "macos" : name.contains("win") ? "windows" : "linux";
     }
 
     /** The Optional mods window. Returns the new choice per path, or null for "Not now". Event thread only. */

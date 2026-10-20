@@ -6,7 +6,8 @@ import java.nio.file.Path;
  * stand-in bootstrap that behaves like packwiz-installer without its window: on the first run it writes packwiz.json
  * with every optional file turned on. The launcher must put the file whose pack default is off back to off, run the
  * installer again for that, remember the release, keep the rest of the manifest, and pass the installer's exit code
- * through. Run: java tests/OptionsTest.java <launcher jar>
+ * through. A third optional file is listed for macOS only in config/haven-os-mods.txt: held off elsewhere, on by its
+ * default on a Mac. Run: java tests/OptionsTest.java <launcher jar>
  */
 public class OptionsTest {
     static void check(boolean ok, String what) {
@@ -18,8 +19,12 @@ public class OptionsTest {
     }
 
     static int run(Path jar, Path home, Path game, Path pack, String exit) throws Exception {
+        return run(jar, home, game, pack, exit, "linux");
+    }
+
+    static int run(Path jar, Path home, Path game, Path pack, String exit, String os) throws Exception {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-        ProcessBuilder pb = new ProcessBuilder(java, "-Djava.awt.headless=true", "-Duser.home=" + home, "-jar",
+        ProcessBuilder pb = new ProcessBuilder(java, "-Djava.awt.headless=true", "-Duser.home=" + home, "-Dhaven.test.os=" + os, "-jar",
                 jar.toString(), pack.resolve("pack.toml").toUri().toString()).directory(game.toFile()).inheritIO();
         pb.environment().put("INST_MC_DIR", game.toString());
         pb.environment().remove("INST_DIR");
@@ -48,6 +53,8 @@ public class OptionsTest {
         Path game = home.resolve("Haven/minecraft");
         Files.createDirectories(game);
         Files.writeString(game.resolve("haven-import.done"), "test\n");
+        Files.createDirectories(game.resolve("config"));
+        Files.writeString(game.resolve("config/haven-os-mods.txt"), "# system file\nmacos mods/mac.pw.toml\n");
         Path pack = home.resolve("pack");
         Files.createDirectories(pack.resolve("mods"));
         Files.createDirectories(pack.resolve("haven"));
@@ -57,11 +64,14 @@ public class OptionsTest {
                 + "default = true\ndescription = \"Stays on.\"\n");
         Files.writeString(pack.resolve("mods/off.pw.toml"), "name = \"Off Mod\"\nfilename = \"off.jar\"\n\n[option]\noptional = true\n"
                 + "default = false\ndescription = \"Off unless asked for.\"\n");
+        Files.writeString(pack.resolve("mods/mac.pw.toml"), "name = \"Mac Mod\"\nfilename = \"mac.jar\"\n\n[option]\noptional = true\n"
+                + "default = true\ndescription = \"Macs only.\"\n");
         // Stand-in bootstrap: prints like the CLI, writes a first manifest with every optional file on, honours HAVEN_TEST_EXIT.
         String manifest = "{\n  \"packFileHash\": {\"type\": \"sha256\", \"value\": \"p\"},\n  \"cachedFiles\": {\n"
                 + "    \"mods/req.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"r\"}, \"isOptional\": false, \"optionValue\": true, \"cachedLocation\": \"mods/req.jar\"},\n"
                 + "    \"mods/on.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"a\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/on.jar\"},\n"
-                + "    \"mods/off.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"b\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/off.jar\"}\n"
+                + "    \"mods/off.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"b\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/off.jar\"},\n"
+                + "    \"mods/mac.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"c\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/mac.jar\"}\n"
                 + "  },\n  \"cachedSide\": \"client\"\n}\n";
         Path src = home.resolve("Boot.java");
         Files.writeString(src, "public class Boot { public static void main(String[] a) throws Exception {"
@@ -85,12 +95,22 @@ public class OptionsTest {
         String after = Files.readString(game.resolve("packwiz.json"));
         check(entry(after, "mods/off.pw.toml").contains("\"optionValue\": false"), "new optional with default off is off");
         check(entry(after, "mods/on.pw.toml").contains("\"optionValue\": true"), "new optional with default on stays on");
+        check(entry(after, "mods/mac.pw.toml").contains("\"optionValue\": false"), "a macOS-only optional is off on Linux");
         check(entry(after, "mods/req.pw.toml").contains("\"optionValue\": true") && after.contains("\"packFileHash\"")
                 && after.contains("\"cachedSide\": \"client\""), "the rest of the manifest is kept");
         check(Files.readString(game.resolve("haven/installed-release.txt")).strip().equals("1.0-haven.5"), "release remembered");
 
         check(run(jar, home, game, pack, null) == 0 && runs(game) == 3, "second launch: one pass, nothing new");
         check(run(jar, home, game, pack, "3") == 3, "a failed update exits with the installer's code");
+
+        Path mac = home.resolve("Mac/minecraft");
+        Files.createDirectories(mac.resolve("config"));
+        Files.writeString(mac.resolve("haven-import.done"), "test\n");
+        Files.copy(game.resolve("config/haven-os-mods.txt"), mac.resolve("config/haven-os-mods.txt"));
+        Files.copy(game.resolve("packwiz-installer-bootstrap.jar"), mac.resolve("packwiz-installer-bootstrap.jar"));
+        check(run(jar, home, mac, pack, null, "macos") == 0, "first launch on a Mac exits 0");
+        check(entry(Files.readString(mac.resolve("packwiz.json")), "mods/mac.pw.toml").contains("\"optionValue\": true"),
+                "a macOS-only optional keeps its default on a Mac");
         System.out.println("options test passed");
         for (Path p : Files.walk(home).sorted(java.util.Comparator.reverseOrder()).toList()) {
             Files.delete(p);

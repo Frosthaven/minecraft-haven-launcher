@@ -30,7 +30,9 @@ The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.ja
    progress (`Updater`). Without its window the installer turns every optional file it meets for the first time on,
    so after the run the launcher puts those back to the pack's `[option] default` (`OptionalMods`, read from the
    `.pw.toml` on the update host), asks with the Optional mods dialog on the first launch, and runs the installer again
-   when anything changed. Choices live in `packwiz.json` (`optionValue`), as with packwiz's own window.
+   when anything changed. Choices live in `packwiz.json` (`optionValue`), as with packwiz's own window. `config/haven-os-mods.txt` in
+   the pack limits optional mods to one system (`macos mods/x.pw.toml`): elsewhere the mod is held off after every
+   update, so the installer removes it, and it is left out of the dialog.
 5. After a good update it adds or removes the "Offline Editor (Axiom)" bridge mods (`OfflineEditor`): the pack's
    `config/haven-offline-editor.txt` lists them (file, SHA-512, URL); they are installed while a `mods/Axiom-*.jar` is
    present and removed when it is gone. A NeoForge switch session leaves them as they are.
