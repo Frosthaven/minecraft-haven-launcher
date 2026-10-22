@@ -96,8 +96,9 @@ public class OptionsTest {
         check(entry(after, "mods/off.pw.toml").contains("\"optionValue\": false"), "new optional with default off is off");
         check(entry(after, "mods/on.pw.toml").contains("\"optionValue\": true"), "new optional with default on stays on");
         check(entry(after, "mods/mac.pw.toml").contains("\"optionValue\": false"), "a macOS-only optional is off on Linux");
-        check(entry(after, "mods/req.pw.toml").contains("\"optionValue\": true") && after.contains("\"packFileHash\"")
-                && after.contains("\"cachedSide\": \"client\""), "the rest of the manifest is kept");
+        check(entry(after, "mods/req.pw.toml").contains("\"optionValue\": true") && after.contains("\"cachedSide\": \"client\""),
+                "the rest of the manifest is kept");
+        check(!after.contains("\"packFileHash\""), "pack hash cleared, so the installer applies the change instead of skipping the run");
         check(Files.readString(game.resolve("haven/installed-release.txt")).strip().equals("1.0-haven.5"), "release remembered");
 
         check(run(jar, home, game, pack, null) == 0 && runs(game) == 3, "second launch: one pass, nothing new");

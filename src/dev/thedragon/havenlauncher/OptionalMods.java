@@ -45,6 +45,12 @@ final class OptionalMods {
     private static final Pattern KEY = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)+\\.pw\\.toml)\"\\s*:\\s*\\{");
     private static final Pattern OPTIONAL = Pattern.compile("\"isOptional\"\\s*:\\s*true");
     private static final Pattern VALUE = Pattern.compile("\"optionValue\"\\s*:\\s*(true|false)");
+    /**
+     * packwiz-installer skips a run whose pack and index hashes match its manifest ("Modpack is already up to date!"),
+     * so a changed choice waited for the next release (a Mac-only mod stayed on Linux). Without the two hashes it checks
+     * every file again; files it has are not downloaded again.
+     */
+    private static final Pattern SKIP_HASH = Pattern.compile("\\s*\"(?:packFileHash|indexFileHash)\"\\s*:\\s*\\{[^{}]*}\\s*,");
     private static final Pattern NAME = Pattern.compile("(?m)^name\\s*=\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
     private static final Pattern DEFAULT = Pattern.compile("(?m)^default\\s*=\\s*(true|false)");
     private static final Pattern DESCRIPTION = Pattern.compile("(?m)^description\\s*=\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
@@ -82,7 +88,7 @@ final class OptionalMods {
         return values;
     }
 
-    /** Sets optionValue for the given files; returns the paths whose value changed. */
+    /** Sets optionValue for the given files (and clears the installer's skip hashes, {@link #SKIP_HASH}); returns the paths whose value changed. */
     static Set<String> write(Path game, Map<String, Boolean> wanted) throws IOException {
         Path manifest = game.resolve(MANIFEST);
         String json = Files.readString(manifest, StandardCharsets.UTF_8);
@@ -119,7 +125,7 @@ final class OptionalMods {
         out.append(json.substring(pos));
         if (!changed.isEmpty()) {
             Path tmp = manifest.resolveSibling(MANIFEST + ".haven");
-            Files.writeString(tmp, out.toString(), StandardCharsets.UTF_8);
+            Files.writeString(tmp, SKIP_HASH.matcher(out).replaceAll(""), StandardCharsets.UTF_8);
             Files.move(tmp, manifest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
         return changed;
