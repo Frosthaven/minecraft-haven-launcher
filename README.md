@@ -33,7 +33,8 @@ The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.ja
    when anything changed. Choices live in `packwiz.json` (`optionValue`), as with packwiz's own window. `config/haven-os-mods.txt` in
    the pack limits optional mods to one system (`macos mods/x.pw.toml`): elsewhere the mod is held off after every
    update, so the installer removes it, and it is left out of the dialog; on its own system it is turned on once
-   (`haven-os-mods.applied`), then the player's choice stands. Its pack default is off, for launchers before 2.1.1.
+   (`haven-os-mods.applied`), then the player's choice stands. Its pack default is off, for launchers before 2.1.1. A line `not macos mods/x.pw.toml` (2.1.3+) does the opposite: the file is held off and hidden on that one
+   system and stays an ordinary optional file elsewhere.
    A changed choice clears `packFileHash` and `indexFileHash` in `packwiz.json` before the second installer pass: with
    both unchanged the installer skips the pass ("Modpack is already up to date!"), and up to 2.1.1 the change waited for
    the next release.
