@@ -54,7 +54,7 @@ public class OptionsTest {
         Files.createDirectories(game);
         Files.writeString(game.resolve("haven-import.done"), "test\n");
         Files.createDirectories(game.resolve("config"));
-        Files.writeString(game.resolve("config/haven-os-mods.txt"), "# system file\nmacos mods/mac.pw.toml\n");
+        Files.writeString(game.resolve("config/haven-os-mods.txt"), "# system file\nmacos mods/mac.pw.toml\nnot macos mods/nomac.pw.toml\n");
         Path pack = home.resolve("pack");
         Files.createDirectories(pack.resolve("mods"));
         Files.createDirectories(pack.resolve("haven"));
@@ -66,12 +66,15 @@ public class OptionsTest {
                 + "default = false\ndescription = \"Off unless asked for.\"\n");
         Files.writeString(pack.resolve("mods/mac.pw.toml"), "name = \"Mac Mod\"\nfilename = \"mac.jar\"\n\n[option]\noptional = true\n"
                 + "default = false\ndescription = \"Macs only.\"\n");
+        Files.writeString(pack.resolve("mods/nomac.pw.toml"), "name = \"No Mac Mod\"\nfilename = \"nomac.jar\"\n\n[option]\noptional = true\n"
+                + "default = true\ndescription = \"Everywhere but Macs.\"\n");
         // Stand-in bootstrap: prints like the CLI, writes a first manifest with every optional file on, honours HAVEN_TEST_EXIT.
         String manifest = "{\n  \"packFileHash\": {\"type\": \"sha256\", \"value\": \"p\"},\n  \"cachedFiles\": {\n"
                 + "    \"mods/req.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"r\"}, \"isOptional\": false, \"optionValue\": true, \"cachedLocation\": \"mods/req.jar\"},\n"
                 + "    \"mods/on.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"a\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/on.jar\"},\n"
                 + "    \"mods/off.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"b\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/off.jar\"},\n"
-                + "    \"mods/mac.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"c\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/mac.jar\"}\n"
+                + "    \"mods/mac.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"c\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/mac.jar\"},\n"
+                + "    \"mods/nomac.pw.toml\": {\"hash\": {\"type\": \"sha256\", \"value\": \"d\"}, \"isOptional\": true, \"optionValue\": true, \"cachedLocation\": \"mods/nomac.jar\"}\n"
                 + "  },\n  \"cachedSide\": \"client\"\n}\n";
         Path src = home.resolve("Boot.java");
         Files.writeString(src, "public class Boot { public static void main(String[] a) throws Exception {"
@@ -96,6 +99,7 @@ public class OptionsTest {
         check(entry(after, "mods/off.pw.toml").contains("\"optionValue\": false"), "new optional with default off is off");
         check(entry(after, "mods/on.pw.toml").contains("\"optionValue\": true"), "new optional with default on stays on");
         check(entry(after, "mods/mac.pw.toml").contains("\"optionValue\": false"), "a macOS-only optional is off on Linux");
+        check(entry(after, "mods/nomac.pw.toml").contains("\"optionValue\": true"), "a not-macOS optional keeps its default (on) on Linux");
         check(entry(after, "mods/req.pw.toml").contains("\"optionValue\": true") && after.contains("\"cachedSide\": \"client\""),
                 "the rest of the manifest is kept");
         check(!after.contains("\"packFileHash\""), "pack hash cleared, so the installer applies the change instead of skipping the run");
@@ -112,6 +116,8 @@ public class OptionsTest {
         check(run(jar, home, mac, pack, null, "macos") == 0, "first launch on a Mac exits 0");
         check(entry(Files.readString(mac.resolve("packwiz.json")), "mods/mac.pw.toml").contains("\"optionValue\": true"),
                 "a macOS-only optional is turned on on a Mac");
+        check(entry(Files.readString(mac.resolve("packwiz.json")), "mods/nomac.pw.toml").contains("\"optionValue\": false"),
+                "a not-macOS optional is held off on a Mac");
         Path m = mac.resolve("packwiz.json");
         String turnedOff = Files.readString(m).replace(entry(Files.readString(m), "mods/mac.pw.toml"),
                 entry(Files.readString(m), "mods/mac.pw.toml").replace("\"optionValue\": true", "\"optionValue\": false"));

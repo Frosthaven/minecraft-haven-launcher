@@ -37,6 +37,10 @@ import javax.swing.border.EmptyBorder;
  * (so the installer removes it) and left out of the dialog. On its own system it is turned on once ({@value #OS_RECORD}
  * in the game folder lists those), and the player's later choice stands. Its pack default is off, so a launcher before
  * 2.1.1 (the first session after the update still runs the old one) keeps it off everywhere.
+ * <p>
+ * {@code not macos mods/x.pw.toml} (2.1.3+) is the opposite: the file is held off and hidden on that one system and is an
+ * ordinary optional file everywhere else, with its pack default. A launcher before 2.1.3 skips such a line (it reads
+ * two-word lines only), so for one session after the update the file still follows its pack default on that system.
  */
 final class OptionalMods {
     static final String MANIFEST = "packwiz.json";
@@ -205,6 +209,8 @@ final class OptionalMods {
                 String[] f = line.strip().split("\\s+");
                 if (f.length == 2 && !f[0].startsWith("#") && f[0].equals(os) == mine) {
                     out.add(f[1]);
+                } else if (f.length == 3 && f[0].equals("not") && !mine && f[1].equals(os)) {
+                    out.add(f[2]);   // "not <system> <path>": held off on that system only, untouched elsewhere
                 }
             }
         }
