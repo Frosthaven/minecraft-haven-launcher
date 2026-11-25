@@ -41,7 +41,15 @@ The Haven Prism instance's pre-launch step: `"$INST_JAVA" -jar haven-launcher.ja
 5. After a good update it adds or removes the "Offline Editor (Axiom)" bridge mods (`OfflineEditor`): the pack's
    `config/haven-offline-editor.txt` lists them (file, SHA-512, URL); they are installed while a `mods/Axiom-*.jar` is
    present and removed when it is gone. A NeoForge switch session leaves them as they are.
-6. The release line: the update host publishes `haven/release.json` next to `pack.toml` (minecraft-haven-updates);
+6. After a good update it gives the instance the pack's Java options (`JvmSync`, 2.2.0+): `config/haven-jvm-args.txt`
+   (one or more lines, `#` comments) goes into Prism's `instance.cfg` (`OverrideJavaArgs`, `JvmArgs`, quoted as Prism
+   writes it) while `JvmArgs` is empty or still holds what Haven wrote last (`haven/jvm-args.applied`); a player's own
+   options are kept. The options are first tried with the instance's Java (`java -version`); options it refuses are
+   skipped, so they can never stop the game. Prism reads `instance.cfg` when a launch starts (before this step) and
+   writes its copy back after the game starts and when it ends, so a background helper writes the options again after
+   each of those saves and ends after the end-of-session one (`totalTimePlayed` changes; at most 24 hours). They apply
+   from the next launch. An empty or missing file removes options Haven wrote.
+7. The release line: the update host publishes `haven/release.json` next to `pack.toml` (minecraft-haven-updates);
    the launcher shows `Haven <version>`, `Updating to Haven <version> (from <installed>)` while it updates, and keeps
    the installed one in `haven/installed-release.txt`. Without that file the line stays empty.
 

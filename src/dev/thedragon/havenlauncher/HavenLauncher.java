@@ -27,7 +27,8 @@ import java.util.concurrent.Executors;
  * <li>Exits 0 on Play now (off while an update runs); closing the window or a failed update exits 1 and stops the
  * launch, as before. Without a window the installer's exit code is ours.</li>
  * </ol>
- * The import, the NeoForge step and the editor step can never block the update: any error there is printed and skipped.
+ * The import, the NeoForge step, the editor step and the Java options step can never block the update: any error there is
+ * printed and skipped.
  */
 public final class HavenLauncher {
     private final Path game;
@@ -49,6 +50,10 @@ public final class HavenLauncher {
     public static void main(String[] args) throws Exception {
         if (args.length == 4 && args[0].equals(LoaderSync.KEEP)) {   // the background helper LoaderSync starts
             LoaderSync.keep(Path.of(args[1]), args[2], args[3]);
+            return;
+        }
+        if (args.length == 3 && args[0].equals(JvmSync.KEEP)) {   // the background helper JvmSync starts
+            JvmSync.keep(Path.of(args[1]), args[2]);
             return;
         }
         if (args.length != 1) {
@@ -143,6 +148,11 @@ public final class HavenLauncher {
                     } catch (Throwable t) {
                         System.err.println("Haven: offline editor step skipped: " + t);
                     }
+                }
+                try {
+                    System.out.println("Haven: " + JvmSync.sync(game, instanceDir(game)));
+                } catch (Throwable t) {
+                    System.err.println("Haven: Java options step skipped: " + t);
                 }
                 if (release != null) {
                     Updater.remember(game, release);
